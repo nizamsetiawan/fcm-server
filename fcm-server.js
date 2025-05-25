@@ -5,46 +5,43 @@ require('dotenv').config();
 
 const app = express();
 
-// Enable CORS with specific options
+// Enable CORS
 app.use(cors({
   origin: '*',
   methods: ['GET', 'POST'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
-// Parse JSON bodies
+// Middleware
 app.use(express.json());
 
 // Log all requests
 app.use((req, res, next) => {
-  console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
   next();
 });
 
-console.log('Starting FCM Server...');
-console.log('Environment variables loaded:', {
-  projectId: process.env.FIREBASE_PROJECT_ID ? 'Set' : 'Not set',
-  privateKey: process.env.FIREBASE_PRIVATE_KEY ? 'Set' : 'Not set',
-  clientEmail: process.env.FIREBASE_CLIENT_EMAIL ? 'Set' : 'Not set',
-  clientId: process.env.FIREBASE_CLIENT_ID ? 'Set' : 'Not set',
-  authUri: process.env.FIREBASE_AUTH_URI ? 'Set' : 'Not set',
-  tokenUri: process.env.FIREBASE_TOKEN_URI ? 'Set' : 'Not set',
-  authProviderX509CertUrl: process.env.FIREBASE_AUTH_PROVIDER_X509_CERT_URL ? 'Set' : 'Not set',
-  clientX509CertUrl: process.env.FIREBASE_CLIENT_X509_CERT_URL ? 'Set' : 'Not set'
-});
-
+// Initialize Firebase Admin
 try {
-  // Initialize Firebase Admin with environment variables
+  console.log('Initializing Firebase Admin...');
+  console.log('Project ID:', process.env.FIREBASE_PROJECT_ID);
+  console.log('Client Email:', process.env.FIREBASE_CLIENT_EMAIL);
+  console.log('Private Key exists:', !!process.env.FIREBASE_PRIVATE_KEY);
+
+  if (!process.env.FIREBASE_PROJECT_ID || !process.env.FIREBASE_CLIENT_EMAIL || !process.env.FIREBASE_PRIVATE_KEY) {
+    throw new Error('Missing required Firebase environment variables');
+  }
+
+  // Format private key
+  const privateKey = process.env.FIREBASE_PRIVATE_KEY
+    .replace(/\\n/g, '\n')
+    .replace(/^"|"$/g, ''); // Remove surrounding quotes if present
+
   admin.initializeApp({
     credential: admin.credential.cert({
       projectId: process.env.FIREBASE_PROJECT_ID,
-      privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
       clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      clientId: process.env.FIREBASE_CLIENT_ID,
-      authUri: process.env.FIREBASE_AUTH_URI,
-      tokenUri: process.env.FIREBASE_TOKEN_URI,
-      authProviderX509CertUrl: process.env.FIREBASE_AUTH_PROVIDER_X509_CERT_URL,
-      clientX509CertUrl: process.env.FIREBASE_CLIENT_X509_CERT_URL
+      privateKey: privateKey
     })
   });
   console.log('Firebase Admin initialized successfully');
@@ -55,49 +52,53 @@ try {
 
 // Health check endpoint
 app.get('/', (req, res) => {
-  console.log('Health check requested');
-  res.json({ 
-    status: 'FCM Server is running',
+  res.json({
+    status: 'ok',
     timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || 'development'
+    firebase: {
+      projectId: process.env.FIREBASE_PROJECT_ID,
+      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+      privateKeyExists: !!process.env.FIREBASE_PRIVATE_KEY
+    }
   });
 });
 
 // Send FCM notification endpoint
 app.post('/send-fcm', async (req, res) => {
   try {
-    console.log('Received FCM request:', JSON.stringify(req.body, null, 2));
     const { token, title, body, data } = req.body;
 
     if (!token || !title || !body) {
-      console.error('Missing required fields:', { token, title, body });
-      return res.status(400).json({ 
+      return res.status(400).json({
         error: 'Missing required fields',
-        received: { token, title, body }
+        required: ['token', 'title', 'body'],
+        received: { token: !!token, title: !!title, body: !!body }
       });
     }
+
+    console.log(`[${new Date().toISOString()}] Sending FCM to token: ${token}`);
+    console.log('Message:', { title, body, data });
 
     const message = {
       notification: {
         title,
-        body,
+        body
       },
       data: data || {},
-      token,
+      token
     };
 
-    console.log('Sending FCM message:', JSON.stringify(message, null, 2));
     const response = await admin.messaging().send(message);
-    console.log('FCM sent successfully:', response);
-    res.json({ 
-      success: true, 
+    console.log('Successfully sent message:', response);
+
+    res.json({
+      success: true,
       messageId: response,
-      message: 'Notification sent successfully',
       timestamp: new Date().toISOString()
     });
   } catch (error) {
     console.error('Error sending FCM:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: error.message,
       details: error.stack,
       timestamp: new Date().toISOString()
@@ -108,15 +109,20 @@ app.post('/send-fcm', async (req, res) => {
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error('Server error:', err);
-  res.status(500).json({ 
+  res.status(500).json({
     error: 'Internal server error',
-    details: err.message,
+    message: err.message,
     timestamp: new Date().toISOString()
   });
 });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`FCM Server listening on port ${PORT}`);
-  console.log('Environment:', process.env.NODE_ENV || 'development');
+  console.log(`Server running on port ${PORT}`);
+  console.log('Environment:', {
+    NODE_ENV: process.env.NODE_ENV,
+    FIREBASE_PROJECT_ID: process.env.FIREBASE_PROJECT_ID,
+    FIREBASE_CLIENT_EMAIL: process.env.FIREBASE_CLIENT_EMAIL,
+    PRIVATE_KEY_EXISTS: !!process.env.FIREBASE_PRIVATE_KEY
+  });
 }); 
