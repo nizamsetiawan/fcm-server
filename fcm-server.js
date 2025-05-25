@@ -29,7 +29,18 @@ try {
     throw new Error('Missing FIREBASE_SERVICE_ACCOUNT environment variable');
   }
 
-  const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+  let serviceAccount;
+  try {
+    serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+  } catch (error) {
+    console.error('Error parsing service account JSON:', error);
+    throw new Error('Invalid service account JSON format');
+  }
+
+  if (!serviceAccount.project_id || !serviceAccount.private_key || !serviceAccount.client_email) {
+    throw new Error('Invalid service account: missing required fields');
+  }
+
   console.log('Service Account loaded:', {
     projectId: serviceAccount.project_id,
     clientEmail: serviceAccount.client_email,
