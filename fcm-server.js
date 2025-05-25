@@ -24,25 +24,20 @@ app.use((req, res, next) => {
 // Initialize Firebase Admin
 try {
   console.log('Initializing Firebase Admin...');
-  console.log('Project ID:', process.env.FIREBASE_PROJECT_ID);
-  console.log('Client Email:', process.env.FIREBASE_CLIENT_EMAIL);
-  console.log('Private Key exists:', !!process.env.FIREBASE_PRIVATE_KEY);
-
-  if (!process.env.FIREBASE_PROJECT_ID || !process.env.FIREBASE_CLIENT_EMAIL || !process.env.FIREBASE_PRIVATE_KEY) {
-    throw new Error('Missing required Firebase environment variables');
+  
+  if (!process.env.FIREBASE_SERVICE_ACCOUNT) {
+    throw new Error('Missing FIREBASE_SERVICE_ACCOUNT environment variable');
   }
 
-  // Format private key
-  const privateKey = process.env.FIREBASE_PRIVATE_KEY
-    .replace(/\\n/g, '\n')
-    .replace(/^"|"$/g, ''); // Remove surrounding quotes if present
+  const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+  console.log('Service Account loaded:', {
+    projectId: serviceAccount.project_id,
+    clientEmail: serviceAccount.client_email,
+    privateKeyExists: !!serviceAccount.private_key
+  });
 
   admin.initializeApp({
-    credential: admin.credential.cert({
-      projectId: process.env.FIREBASE_PROJECT_ID,
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      privateKey: privateKey
-    })
+    credential: admin.credential.cert(serviceAccount)
   });
   console.log('Firebase Admin initialized successfully');
 } catch (error) {
@@ -52,15 +47,24 @@ try {
 
 // Health check endpoint
 app.get('/', (req, res) => {
-  res.json({
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    firebase: {
-      projectId: process.env.FIREBASE_PROJECT_ID,
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      privateKeyExists: !!process.env.FIREBASE_PRIVATE_KEY
-    }
-  });
+  try {
+    const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+    res.json({
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+      firebase: {
+        projectId: serviceAccount.project_id,
+        clientEmail: serviceAccount.client_email,
+        privateKeyExists: !!serviceAccount.private_key
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      status: 'error',
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
 });
 
 // Send FCM notification endpoint
@@ -119,10 +123,15 @@ app.use((err, req, res, next) => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
-  console.log('Environment:', {
-    NODE_ENV: process.env.NODE_ENV,
-    FIREBASE_PROJECT_ID: process.env.FIREBASE_PROJECT_ID,
-    FIREBASE_CLIENT_EMAIL: process.env.FIREBASE_CLIENT_EMAIL,
-    PRIVATE_KEY_EXISTS: !!process.env.FIREBASE_PRIVATE_KEY
-  });
+  try {
+    const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+    console.log('Environment:', {
+      NODE_ENV: process.env.NODE_ENV,
+      FIREBASE_PROJECT_ID: serviceAccount.project_id,
+      FIREBASE_CLIENT_EMAIL: serviceAccount.client_email,
+      PRIVATE_KEY_EXISTS: !!serviceAccount.private_key
+    });
+  } catch (error) {
+    console.error('Error parsing service account:', error);
+  }
 }); 
